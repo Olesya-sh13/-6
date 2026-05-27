@@ -9,68 +9,111 @@
 
 # =============================================================================
 # БЛОК ИМПОРТА ГРАФИЧЕСКИХ БИБЛИОТЕК
-# matplotlib.use() должен вызываться ДО первого импорта matplotlib.pyplot
+# matplotlib.use() должен вызываться ДО первого импорта matplotlib.pyplot,
+# иначе смена бэкенда не применяется
 # =============================================================================
-import matplotlib                            # базовая библиотека построения графиков
-matplotlib.use('Agg')                        # бэкенд Agg — рендеринг без дисплея, сохранение в файл
-import matplotlib.pyplot as plt              # pyplot — интерфейс для создания и сохранения фигур
-import seaborn as sns                        # seaborn — визуализация данных на базе matplotlib
+import matplotlib                 # базовая библиотека построения графиков
+matplotlib.use('Agg')             # бэкенд Agg — рендеринг без дисплея, вывод в файл
+import matplotlib.pyplot as plt   # pyplot — интерфейс для создания и сохранения фигур
+import seaborn as sns             # seaborn — статистическая визуализация на базе matplotlib
 
 
 # =============================================================================
 # БЛОК ВВОДА ДАННЫХ
-# Генерация синтетического набора данных методом make_blobs
+# Генерация синтетического набора данных методом make_blobs.
+# По условию задания данные распределены по ОДНОМУ нормально распределённому
+# кластеру точек (centers=1), что намеренно усложняет задачу кластеризации.
 # =============================================================================
-from sklearn.datasets import make_blobs  # make_blobs — генерирует точки вокруг заданных центров;
-                                         # возвращает массив координат и массив меток кластеров
-import pandas as pd                      # pandas — библиотека для работы с табличными данными
+from sklearn.datasets import make_blobs  # make_blobs — генерирует Гауссовы кластеры;
+                                         # возвращает массив координат и массив истинных меток
+import pandas as pd                      # pandas — работа с табличными данными (DataFrame)
 
 # make_blobs параметры:
 #   n_samples=200   — количество генерируемых точек
-#   n_features=2    — число координат каждой точки (2D: var1, var2)
-#   centers=4       — количество центров (нормально распределённых кластеров) при генерации
-#   cluster_std=0.5 — стандартное отклонение точек вокруг центра (плотность кластера)
-#   random_state=0  — фиксация генератора случайных чисел для воспроизводимости
-dataset, classes = make_blobs(n_samples=200, n_features=2, centers=4, cluster_std=0.5, random_state=0)
+#   n_features=2    — размерность пространства (2D: var1, var2)
+#   centers=1       — ОДИН нормально распределённый кластер (по условию задания)
+#   cluster_std=1.0 — стандартное отклонение (разброс точек вокруг центра)
+#   random_state=0  — фиксация генератора для воспроизводимости результатов
+dataset, classes = make_blobs(n_samples=200, n_features=2, centers=1,
+                               cluster_std=1.0, random_state=0)
 
 # pd.DataFrame — преобразует массив NumPy в таблицу с именованными столбцами
 df = pd.DataFrame(dataset, columns=['var1', 'var2'])
 
-# Вывод первых строк датасета в консоль
-print(df.head(2))
+print("=" * 60)
+print("НАБОР ДАННЫХ (один нормально распределённый кластер):")
+print(df.head(10))           # вывод первых 10 строк датасета в консоль
+print(f"Всего точек: {len(df)}")
 
 
 # =============================================================================
 # БЛОК ОПРЕДЕЛЕНИЯ ОПТИМАЛЬНОГО ЧИСЛА КЛАСТЕРОВ (МЕТОД ЛОКТЯ — ELBOW)
-# KElbowVisualizer автоматически перебирает значения k, строит кривую WCSS
-# и определяет «локоть» — точку, после которой прирост качества замедляется
+# KElbowVisualizer перебирает значения k, на каждом вызывает .fit(df),
+# вычисляет инерцию (WCSS) и определяет «локоть» кривой
 # =============================================================================
 from yellowbrick.cluster import KElbowVisualizer  # KElbowVisualizer — визуализатор метода локтя
 from sklearn.cluster import KMeans                 # KMeans — алгоритм кластеризации K-средних
 
-# KMeans с указанным n_clusters необходим, чтобы yellowbrick распознал
-# переданную модель как кластеризатор (проверка isinstance(estimator, ClusterMixin))
-model = KMeans(n_clusters=4)
+# KMeans(n_clusters=4) — начальная модель; конкретное n_clusters не важно,
+# так как visualizer сам перебирает диапазон k; указываем любое значение,
+# чтобы yellowbrick 1.5 распознал объект как кластеризатор
+model = KMeans(n_clusters=4, random_state=0)
 
-# KElbowVisualizer.fit — перебирает k от 1 до 12, обучает KMeans для каждого k
-# и откладывает значение инерции (WCSS) на графике; «локоть» — оптимальное k
-# force_model=True — обходит проверку типа estimator в yellowbrick 1.5 / sklearn 1.8+,
-# где атрибут _estimator_type у KMeans больше не устанавливается автоматически
-visualizer = KElbowVisualizer(model, k=(1, 12), force_model=True).fit(df)
-visualizer.fig.savefig('chart2.jpeg')  # сохранение графика Elbow в файл
+# KElbowVisualizer.fit — вызывает model.fit(df) для каждого k в диапазоне (2, 11),
+# строит кривую инерции и находит «локоть» — оптимальное число кластеров;
+# force_model=True — обходит проверку типа estimator (yellowbrick 1.5 / sklearn 1.8+
+# убрал атрибут _estimator_type из KMeans)
+visualizer = KElbowVisualizer(model, k=(2, 11), force_model=True)
+visualizer.fit(df)                         # .fit — обучает модель на всём диапазоне k
+visualizer.fig.savefig('chart2.jpeg')      # сохранение графика Elbow в файл
+
+# elbow_value_ — оптимальное k, найденное методом локтя
+optimal_k = visualizer.elbow_value_
+
+print("\n" + "=" * 60)
+print(f"МЕТОД ЛОКТЯ: оптимальное число кластеров k = {optimal_k}")
+
+
+# =============================================================================
+# БЛОК ОЦЕНКИ КАЧЕСТВА КЛАСТЕРИЗАЦИИ (МЕТОД СИЛУЭТА — SILHOUETTE)
+# Применяется, если данные плохо кластеризованы (silhouette_score < 0.5),
+# чтобы подтвердить или скорректировать значение k из метода локтя
+# =============================================================================
+from sklearn.metrics import silhouette_score  # silhouette_score — средний коэффициент силуэта;
+                                              # значение близкое к 1 = хорошая кластеризация,
+                                              # близкое к 0 = плохая (кластеры перекрываются)
+
+# Вычисляем silhouette для k, найденного методом локтя
+km_check = KMeans(n_clusters=optimal_k, init='k-means++', random_state=0).fit(df)
+sil_score = silhouette_score(df, km_check.labels_)
+
+print(f"Silhouette Score для k={optimal_k}: {sil_score:.4f}")
+
+# Если данные плохо кластеризованы (sil < 0.5) — перебираем k и ищем лучший
+if sil_score < 0.5:
+    print("Данные плохо кластеризованы — поиск k с максимальным Silhouette Score:")
+    best_k, best_sil = optimal_k, sil_score
+    for k in range(2, 11):
+        km_tmp = KMeans(n_clusters=k, init='k-means++', random_state=0).fit(df)
+        s = silhouette_score(df, km_tmp.labels_)
+        print(f"  k={k}  Silhouette={s:.4f}")
+        if s > best_sil:
+            best_sil, best_k = s, k
+    optimal_k = best_k
+    print(f"Уточнённое оптимальное k (по Silhouette): {optimal_k}  (score={best_sil:.4f})")
 
 
 # =============================================================================
 # БЛОК ОБУЧЕНИЯ МОДЕЛИ КЛАСТЕРИЗАЦИИ
-# Обучение финальной модели KMeans с заданным числом кластеров
+# Финальное обучение KMeans с оптимальным числом кластеров
 # =============================================================================
 
 # KMeans параметры:
-#   n_clusters=4      — число искомых кластеров
-#   init='k-means++'  — умная инициализация центроидов (снижает риск локального минимума)
-#   random_state=0    — фиксация для воспроизводимости
+#   n_clusters=optimal_k  — число кластеров, определённое методом локтя/силуэта
+#   init='k-means++'      — умная инициализация центроидов (снижает риск локального минимума)
+#   random_state=0        — фиксация для воспроизводимости
 # .fit(df) — обучает модель: итеративно перемещает центроиды до сходимости
-kmeans = KMeans(n_clusters=4, init='k-means++', random_state=0).fit(df)
+kmeans = KMeans(n_clusters=optimal_k, init='k-means++', random_state=0).fit(df)
 
 
 # =============================================================================
@@ -80,6 +123,7 @@ kmeans = KMeans(n_clusters=4, init='k-means++', random_state=0).fit(df)
 from collections import Counter  # Counter — подсчитывает количество точек в каждом кластере
 
 # kmeans.labels_ — массив предсказанных меток кластеров для каждой точки датасета
+print("\n" + "=" * 60)
 print("Прогнозируемые кластеры для каждой точки:")
 print(kmeans.labels_)
 
@@ -102,22 +146,31 @@ print(Counter(kmeans.labels_))
 
 # =============================================================================
 # БЛОК ВИЗУАЛИЗАЦИИ
-# Построение диаграммы рассеяния с обозначением кластеров и центроидов
+# Диаграмма рассеяния с обозначением кластеров предсказанными метками классов
+# и маркерами центроидов
 # =============================================================================
+
+# kmeans.labels_.astype(str) — ВАЖНО: преобразование меток в строки;
+# без этого seaborn воспринимает целочисленные метки как непрерывную
+# числовую шкалу и рисует цветовой градиент вместо дискретных цветов кластеров
+labels_str = kmeans.labels_.astype(str)
 
 # sns.scatterplot — строит диаграмму рассеяния;
 #   data=df            — источник данных
 #   x='var1', y='var2' — столбцы координат по осям X и Y
-#   hue=kmeans.labels_ — цвет каждой точки определяется предсказанной меткой кластера
-sns.scatterplot(data=df, x='var1', y='var2', hue=kmeans.labels_)
+#   hue=labels_str     — цвет точки определяется предсказанной меткой кластера (строка)
+#   palette='tab10'    — дискретная палитра с контрастными цветами для кластеров
+sns.scatterplot(data=df, x='var1', y='var2', hue=labels_str, palette='tab10')
 
 # plt.scatter — наносит поверх диаграммы центроиды кластеров;
-#   marker="X" — форма маркера X выделяет центроиды среди точек данных
+#   marker="X" — форма маркера X визуально выделяет центроиды среди точек данных
 #   c="r"      — красный цвет центроидов
 #   s=80       — размер маркера в пикселях
+#   zorder=5   — центроиды рисуются поверх точек данных
 plt.scatter(kmeans.cluster_centers_[:, 0], kmeans.cluster_centers_[:, 1],
-            marker="X", c="r", s=80, label="centroids")
+            marker="X", c="r", s=80, label="centroids", zorder=5)
 
-plt.legend()               # отображение легенды с метками кластеров
+plt.title(f"KMeans кластеризация (k={optimal_k})")
+plt.legend()               # легенда с предсказанными метками классов кластеров
 plt.savefig('chart3.jpeg') # сохранение итоговой диаграммы рассеяния в файл
 print("\nГрафик кластеризации сохранён в chart3.jpeg")

@@ -6,3 +6,9 @@ id = "MPfs0uJ5byWRXW_tvdTIH"
 uri = "file://chart3.jpeg"
 type = "image"
 title = "Диаграмма рассеяния кластеров (chart3.jpeg)"
+
+[[outputs]]
+id = "O81ue0aTSS10cR8pcW4k5"
+uri = "file://chart2.jpeg"
+type = "image"
+title = "График метода локтя (chart2.jpeg)"
