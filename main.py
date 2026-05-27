@@ -8,132 +8,96 @@
 
 
 # =============================================================================
-# БЛОК ИМПОРТА БИБЛИОТЕК
-# Подключение всех необходимых Python-пакетов для работы микросервиса
+# БЛОК ИМПОРТА ГРАФИЧЕСКИХ БИБЛИОТЕК
+# matplotlib.use() должен вызываться ДО первого импорта matplotlib.pyplot
 # =============================================================================
-from sklearn.datasets import make_blobs      # генерация синтетических кластерных данных
-from sklearn.cluster import KMeans           # алгоритм кластеризации K-средних
-from sklearn.metrics import silhouette_score # метрика качества кластеризации (силуэт)
-from collections import Counter              # подсчёт количества точек в каждом кластере
-import pandas as pd                          # работа с табличными данными (DataFrame)
 import matplotlib                            # базовая библиотека построения графиков
-import matplotlib.pyplot as plt              # интерфейс построения графиков
-import seaborn as sns                        # продвинутая визуализация на базе matplotlib
-
-matplotlib.use('WebAgg')  # бэкенд WebAgg запускает встроенный HTTP-сервер matplotlib
-                          # и открывает интерактивный графический интерфейс в браузере
-matplotlib.rcParams['webagg.port'] = 5000          # порт HTTP-сервера для WebAgg
-matplotlib.rcParams['webagg.open_in_browser'] = False  # не открывать браузер автоматически
+matplotlib.use('Agg')                        # бэкенд Agg — рендеринг без дисплея, сохранение в файл
+import matplotlib.pyplot as plt              # pyplot — интерфейс для создания и сохранения фигур
+import seaborn as sns                        # seaborn — визуализация данных на базе matplotlib
 
 
 # =============================================================================
-# БЛОК ВВОДА / ГЕНЕРАЦИИ ДАННЫХ
-# Создание синтетического набора данных с помощью make_blobs
+# БЛОК ВВОДА ДАННЫХ
+# Генерация синтетического набора данных методом make_blobs
 # =============================================================================
+from sklearn.datasets import make_blobs  # make_blobs — генерирует точки вокруг заданных центров;
+                                         # возвращает массив координат и массив меток кластеров
+import pandas as pd                      # pandas — библиотека для работы с табличными данными
 
-# make_blobs — генерирует точки данных, сгруппированные вокруг заданных центров;
-#   n_samples  — общее количество генерируемых точек;
-#   n_features — число признаков (координат) каждой точки;
-#   centers    — число истинных центров (кластеров) при генерации;
-#   cluster_std — стандартное отклонение точек вокруг центра (разброс);
-#   random_state — фиксирует генератор случайных чисел для воспроизводимости
-dataset, classes = make_blobs(
-    n_samples=200,
-    n_features=2,
-    centers=1,        # один нормально распределённый кластер (по условию задания)
-    cluster_std=1.0,
-    random_state=0
-)
+# make_blobs параметры:
+#   n_samples=200   — количество генерируемых точек
+#   n_features=2    — число координат каждой точки (2D: var1, var2)
+#   centers=4       — количество центров (нормально распределённых кластеров) при генерации
+#   cluster_std=0.5 — стандартное отклонение точек вокруг центра (плотность кластера)
+#   random_state=0  — фиксация генератора случайных чисел для воспроизводимости
+dataset, classes = make_blobs(n_samples=200, n_features=2, centers=4, cluster_std=0.5, random_state=0)
 
 # pd.DataFrame — преобразует массив NumPy в таблицу с именованными столбцами
 df = pd.DataFrame(dataset, columns=['var1', 'var2'])
 
-print("=" * 60)
-print("БЛОК ВВОДА ДАННЫХ — первые 10 строк датасета:")
-print(df.head(10))          # вывод первых строк датасета в консоль
-print(f"Всего точек: {len(df)}")
+# Вывод первых строк датасета в консоль
+print(df.head(2))
 
 
 # =============================================================================
-# БЛОК ОПРЕДЕЛЕНИЯ ОПТИМАЛЬНОГО ЧИСЛА КЛАСТЕРОВ (МЕТОД ЛОКТЯ + SILHOUETTE)
-# Перебор значений k, подсчёт инерции и коэффициента силуэта для каждого k.
-# Метод локтя (Elbow): ищем «излом» на кривой инерции.
-# Метод силуэта (Silhouette): выбираем k с максимальным средним коэффициентом.
+# БЛОК ОПРЕДЕЛЕНИЯ ОПТИМАЛЬНОГО ЧИСЛА КЛАСТЕРОВ (МЕТОД ЛОКТЯ — ELBOW)
+# KElbowVisualizer автоматически перебирает значения k, строит кривую WCSS
+# и определяет «локоть» — точку, после которой прирост качества замедляется
 # =============================================================================
+from yellowbrick.cluster import KElbowVisualizer  # KElbowVisualizer — визуализатор метода локтя
+from sklearn.cluster import KMeans                 # KMeans — алгоритм кластеризации K-средних
 
-inertia_values    = []   # WCSS (внутрикластерная сумма квадратов) для каждого k
-silhouette_values = []   # средний коэффициент силуэта для каждого k
-K_range = range(2, 11)   # диапазон проверяемых значений числа кластеров
+# KMeans с указанным n_clusters необходим, чтобы yellowbrick распознал
+# переданную модель как кластеризатор (проверка isinstance(estimator, ClusterMixin))
+model = KMeans(n_clusters=4)
 
-for k in K_range:
-    # KMeans — создаёт модель кластеризации;
-    #   n_clusters  — число искомых кластеров;
-    #   init='k-means++' — умная инициализация центроидов (снижает риск локального минимума);
-    #   random_state — фиксирует начальное состояние для воспроизводимости
-    km = KMeans(n_clusters=k, init='k-means++', random_state=0)
-
-    # fit — обучает модель: итеративно перемещает центроиды до сходимости
-    km.fit(df)
-
-    # km.inertia_ — сумма квадратов расстояний от каждой точки до её центроида (WCSS)
-    inertia_values.append(km.inertia_)
-
-    # silhouette_score — среднее значение коэффициента силуэта по всем точкам;
-    # значение близкое к 1 означает хорошо разделённые кластеры
-    silhouette_values.append(silhouette_score(df, km.labels_))
-
-print("\n" + "=" * 60)
-print("БЛОК ОПРЕДЕЛЕНИЯ ОПТИМАЛЬНОГО k (Elbow + Silhouette):")
-print(f"{'k':>4} | {'Inertia (WCSS)':>16} | {'Silhouette Score':>16}")
-print("-" * 44)
-for k, iner, sil in zip(K_range, inertia_values, silhouette_values):
-    print(f"{k:>4} | {iner:>16.4f} | {sil:>16.4f}")
-
-# Автоматический выбор оптимального k по максимальному коэффициенту силуэта
-optimal_k = list(K_range)[silhouette_values.index(max(silhouette_values))]
-print(f"\nОптимальное число кластеров (по Silhouette): k = {optimal_k}")
+# KElbowVisualizer.fit — перебирает k от 1 до 12, обучает KMeans для каждого k
+# и откладывает значение инерции (WCSS) на графике; «локоть» — оптимальное k
+# force_model=True — обходит проверку типа estimator в yellowbrick 1.5 / sklearn 1.8+,
+# где атрибут _estimator_type у KMeans больше не устанавливается автоматически
+visualizer = KElbowVisualizer(model, k=(1, 12), force_model=True).fit(df)
+visualizer.fig.savefig('chart2.jpeg')  # сохранение графика Elbow в файл
 
 
 # =============================================================================
 # БЛОК ОБУЧЕНИЯ МОДЕЛИ КЛАСТЕРИЗАЦИИ
-# Финальное обучение KMeans с найденным оптимальным числом кластеров
+# Обучение финальной модели KMeans с заданным числом кластеров
 # =============================================================================
 
-# KMeans — итоговая модель с оптимальным k, найденным методом силуэта
-kmeans = KMeans(n_clusters=optimal_k, init='k-means++', random_state=0)
-
-# fit — обучает модель на полном датасете и сохраняет результаты в атрибутах объекта
-kmeans.fit(df)
+# KMeans параметры:
+#   n_clusters=4      — число искомых кластеров
+#   init='k-means++'  — умная инициализация центроидов (снижает риск локального минимума)
+#   random_state=0    — фиксация для воспроизводимости
+# .fit(df) — обучает модель: итеративно перемещает центроиды до сходимости
+kmeans = KMeans(n_clusters=4, init='k-means++', random_state=0).fit(df)
 
 
 # =============================================================================
 # БЛОК ВЫВОДА РЕЗУЛЬТАТОВ КЛАСТЕРИЗАЦИИ
 # Печать ключевых характеристик обученной модели в консоль
 # =============================================================================
+from collections import Counter  # Counter — подсчитывает количество точек в каждом кластере
 
-print("\n" + "=" * 60)
-print("БЛОК РЕЗУЛЬТАТОВ КЛАСТЕРИЗАЦИИ:")
+# kmeans.labels_ — массив предсказанных меток кластеров для каждой точки датасета
+print("Прогнозируемые кластеры для каждой точки:")
+print(kmeans.labels_)
 
-# kmeans.labels_ — массив длиной n_samples; каждый элемент — номер кластера точки
-print(f"\nПрогнозируемые кластеры (первые 20 значений):")
-print(kmeans.labels_[:20])
+# kmeans.cluster_centers_ — массив координат (var1, var2) центроида каждого кластера
+print("\nКоординаты центроидов кластеров:")
+print(kmeans.cluster_centers_)
 
-# kmeans.cluster_centers_ — массив координат центроидов формы (k, n_features)
-print(f"\nКоординаты центроидов кластеров:")
-for i, center in enumerate(kmeans.cluster_centers_):
-    print(f"  Кластер {i}: var1 = {center[0]:.4f},  var2 = {center[1]:.4f}")
+# kmeans.inertia_ — внутрикластерная сумма квадратов расстояний от точек до центроидов (WCSS)
+print("\nВнутрикластерная сумма квадратов (Inertia):")
+print(kmeans.inertia_)
 
-# kmeans.inertia_ — внутрикластерная сумма квадратов (WCSS) финальной модели
-print(f"\nВнутрикластерная сумма квадратов (Inertia / WCSS): {kmeans.inertia_:.4f}")
+# kmeans.n_iter_ — число итераций алгоритма K-средних до достижения сходимости
+print("\nКоличество итераций K-средних:")
+print(kmeans.n_iter_)
 
-# kmeans.n_iter_ — число итераций алгоритма EM до достижения сходимости
-print(f"Количество итераций K-средних: {kmeans.n_iter_}")
-
-# Counter — словарь {метка_кластера: количество_точек}
-cluster_sizes = Counter(kmeans.labels_)
-print(f"\nРазмер каждого кластера:")
-for cluster_id, size in sorted(cluster_sizes.items()):
-    print(f"  Кластер {cluster_id}: {size} точек")
+# Counter(kmeans.labels_) — словарь {метка_кластера: количество_точек}
+print("\nРазмер каждого кластера:")
+print(Counter(kmeans.labels_))
 
 
 # =============================================================================
@@ -141,52 +105,19 @@ for cluster_id, size in sorted(cluster_sizes.items()):
 # Построение диаграммы рассеяния с обозначением кластеров и центроидов
 # =============================================================================
 
-fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-fig.suptitle(f"KMeans кластеризация (k = {optimal_k})", fontsize=14)
+# sns.scatterplot — строит диаграмму рассеяния;
+#   data=df            — источник данных
+#   x='var1', y='var2' — столбцы координат по осям X и Y
+#   hue=kmeans.labels_ — цвет каждой точки определяется предсказанной меткой кластера
+sns.scatterplot(data=df, x='var1', y='var2', hue=kmeans.labels_)
 
-# --- График 1: кривая Elbow (зависимость инерции от числа кластеров) ---
-axes[0].plot(list(K_range), inertia_values, marker='o', linewidth=2)
-axes[0].set_title("Метод локтя (Elbow Method)")
-axes[0].set_xlabel("Число кластеров k")
-axes[0].set_ylabel("Inertia (WCSS)")
-# Вертикальная линия отмечает выбранный оптимальный k
-axes[0].axvline(x=optimal_k, color='red', linestyle='--', label=f'k={optimal_k}')
-axes[0].legend()
+# plt.scatter — наносит поверх диаграммы центроиды кластеров;
+#   marker="X" — форма маркера X выделяет центроиды среди точек данных
+#   c="r"      — красный цвет центроидов
+#   s=80       — размер маркера в пикселях
+plt.scatter(kmeans.cluster_centers_[:, 0], kmeans.cluster_centers_[:, 1],
+            marker="X", c="r", s=80, label="centroids")
 
-# --- График 2: диаграмма рассеяния с предсказанными метками кластеров ---
-# sns.scatterplot — рисует точки данных; hue окрашивает точки по метке кластера
-sns.scatterplot(
-    data=df,
-    x='var1',
-    y='var2',
-    hue=kmeans.labels_.astype(str),   # hue — цвет каждой точки по номеру кластера
-    palette='tab10',
-    s=60,
-    alpha=0.8,
-    legend='full',
-    ax=axes[1]
-)
-
-# plt.scatter — поверх рассеяния наносит центроиды маркером X красного цвета
-axes[1].scatter(
-    kmeans.cluster_centers_[:, 0],
-    kmeans.cluster_centers_[:, 1],
-    marker='X',      # маркер X визуально выделяет центроиды среди точек данных
-    c='red',
-    s=150,
-    zorder=5,
-    label='Центроиды'
-)
-axes[1].set_title("Диаграмма рассеяния кластеров")
-axes[1].set_xlabel("var1")
-axes[1].set_ylabel("var2")
-axes[1].legend(title='Кластер', bbox_to_anchor=(1.05, 1), loc='upper left')
-
-plt.tight_layout()
-
-# Сохранение итогового графика в файл JPEG
-plt.savefig('chart3.jpeg', dpi=120)
-print("\nГрафик сохранён в chart3.jpeg")
-
-# plt.show() — отображает оба графика в графическом окне GUI
-plt.show()
+plt.legend()               # отображение легенды с метками кластеров
+plt.savefig('chart3.jpeg') # сохранение итоговой диаграммы рассеяния в файл
+print("\nГрафик кластеризации сохранён в chart3.jpeg")

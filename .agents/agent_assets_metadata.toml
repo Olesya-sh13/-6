@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "MPfs0uJ5byWRXW_tvdTIH"
+uri = "file://chart3.jpeg"
+type = "image"
+title = "Диаграмма рассеяния кластеров (chart3.jpeg)"
