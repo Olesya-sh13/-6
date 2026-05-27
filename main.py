@@ -61,11 +61,11 @@ model = KMeans(n_clusters=4, random_state=0)
 
 # KElbowVisualizer.fit — вызывает model.fit(df) для каждого k в диапазоне (2, 11),
 # строит кривую инерции и находит «локоть» — оптимальное число кластеров;
-# force_model=True — обходит проверку типа estimator (yellowbrick 1.5 / sklearn 1.8+
-# убрал атрибут _estimator_type из KMeans)
+
 visualizer = KElbowVisualizer(model, k=(2, 11), force_model=True)
 visualizer.fit(df)                         # .fit — обучает модель на всём диапазоне k
-visualizer.fig.savefig('chart2.jpeg')      # сохранение графика Elbow в файл
+visualizer.fig.savefig('chart2.jpeg')   # сохранение графика Elbow в файл
+plt.clf() 
 
 # elbow_value_ — оптимальное k, найденное методом локтя
 optimal_k = visualizer.elbow_value_
